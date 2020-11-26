@@ -3,19 +3,24 @@
 ## UploadOFSFile
 Java project to upload OFS messages through JMS queues into T24, from flat files
 
-#Requirements
+### Requirements
 - Java 8
 - JBOSS EAP 7
 - T24 Enviroment (R19)
 
-#Compilation
+### Compilation
 Download code, and build with IntelliJ via maven
 ** Maven will create one jar file UploadOFSFile-1.0-SNAPSHOT.jar, and a lib folder with the corersponding depdencies to use
 
-#Execution
+### Execution
 java -jar UploadOFSFile-1.0-SNAPSHOT.jar
 
-#Configuration
+- Logic will take ofs (*.ofs) files from the {{inputPath}} and process it, line by line
+- Finally a new folder {{inputPath}}/output/{inputFileName} will be created
+- Inside of that folder one file will be created for each line (#)-UUIDD where (#) is the original line number
+
+
+### Configuration
 Modify file UploadOFSFile-1.0-SNAPSHOT.jar>jndi.properties 
 
 ```
