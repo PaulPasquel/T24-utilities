@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Configures the Camel Context-->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:jee="http://www.springframework.org/schema/jee"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd
+       http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee-3.0.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+  <!-- Load properties for SPRING Context -->
+  <context:property-placeholder location="classpath:jndi.properties" />
+
+
+  <!-- Get Connection Factory from JNDI -->
+  <jee:jndi-lookup id="t24ConnectionFactory" jndi-name="${jmsConnectionFactory}">
+  </jee:jndi-lookup>
+
+  <!-- Apachec Camel JMS Component -->
+  <bean id="jms" class="org.apache.camel.component.jms.JmsComponent">
+    <property name="connectionFactory" ref="t24ConnectionFactory"/>
+    <property name="username" value="${java.naming.security.principal}"/>
+    <property name="password" value="${java.naming.security.credentials}"/>
+    <!-- property name="includeSentJMSMessageID" value="true"/-->
+    <!-- property name="replyTo" value="${responseQueue}"/ -->
+  </bean>
+
+  <!-- TODO: Logic for managing OFS request like add credential info, and so on
+  <bean id="addT24CredentialsProcesor" class="org.example.OFSCredentialsProcesor" lazy-init="true">
+    <property name="t24UserName" value="${t24UserName:null}" />
+    <property name="t24Password" value="${t24Password:null}"/>
+    <property name="t24CompanyId" value="${t24CompanyId:null}"/>
+  </bean>
+  -->
+
+  <!-- Threapool -->
+  <bean id="threadPool" class="java.util.concurrent.Executors" factory-method="newFixedThreadPool">
+    <constructor-arg index="0" value="${maxNoOfThreads}"/>
+  </bean>
+
+  <!-- Generate MessagesID -->
+  <bean id="uuid" class="java.util.UUID" factory-method="randomUUID">
+  </bean>
+
+  <camelContext xmlns="http://camel.apache.org/schema/spring" id="fileRoute">
+
+    <!-- Load jndi.properties to use from Simple expressions -->
+    <propertyPlaceholder id="systemProperties" location="classpath:jndi.properties"/>
+
+    <!-- main route -->
+    <!-- Take file, split line by line and publish JMS Request Queue -->
+    <route id="uploadOFSFile">
+      <from uri="file:{{inputPath}}?noop={{keepFile}}&amp;include={{filePattern}}"/>
+      <log message="Start ${date:now:yyyy-MM-dd'T'HH:mm:ssZ}" loggingLevel="INFO" />
+      <setProperty name="inputFile">
+        <simple>${header.CamelFileName}</simple>
+      </setProperty>
+<!-- -->
+      <log message="START>> Input File: ${exchangeProperty.inputFile}" loggingLevel="INFO"/>
+<!-- -->
+      <split streaming="true" parallelProcessing="true">
+        <tokenize token="$simple{sys.lineSeparator}" trim="true"/>
+        <to uri="direct:publishJMS"/>
+      </split>
+      <log message="END>> Input File: ${exchangeProperty.inputFile}" loggingLevel="INFO"/>
+    </route>
+
+    <!--- publish OFS at JMS Request Queue -->
+    <route>
+      <from uri="direct:publishJMS"/>
+      <threads executorServiceRef="threadPool"/>
+      <log message="Request: ${body}" loggingLevel="INFO"/>
+      <setHeader name="JMSCorrelationID">
+        <simple resultType="String">${exchangeProperty.inputFile}/${exchangeProperty.CamelSplitIndex}-${bean:uuid?method=randomUUID}</simple>
+      </setHeader>
+      <throttle>
+        <simple>{{maxNoOfReqBySec}}</simple>
+      </throttle>
+      <to uri="jms:queue:{{requestQueue}}" pattern="InOnly"/>
+<!--
+      <setHeader name="JMSCorrelationID">
+        <simple resultType="String" trim="true">$simple{headers.JMSMessageID}</simple>
+      </setHeader>
+      <setHeader name="CamelFileName">
+        <simple>${in.header.JMSCorrelationID.replaceAll("[:-]","_")}</simple>
+      </setHeader>
+-->
+      <setHeader name="CamelFileName">
+        <simple>./output/${in.header.JMSCorrelationID}</simple>
+      </setHeader>
+      <toD uri="file:{{inputPath}}?fileExist=Override"/>
+    </route>
+
+    <route id="processResponse">
+      <from uri="jms:queue:{{responseQueue}}"/>
+      <threads executorServiceRef="threadPool"/>
+<!--
+      <log message="Processing ${header.JMSCorrelationID}"/>
+      <to uri="log:INFO?showBody=true&amp;showHeaders=true"/>
+-->
+<!--
+      <choice>
+        <when>
+          <simple>${bodyAs(String)} regex "^.*/.*/1.*"</simple>
+          <setHeader name="CamelFileName">
+            <simple>/output/s${in.header.JMSCorrelationID}</simple>
+          </setHeader>
+        </when>
+        <otherwise>
+          <setHeader name="CamelFileName">
+            <simple>/output/f${in.header.JMSCorrelationID}</simple>
+          </setHeader>
+        </otherwise>
+      </choice>
+-->
+      <transform>
+        <simple>\n${body}</simple>
+      </transform>
+      <setHeader name="CamelFileName">
+        <simple>/output/${in.header.JMSCorrelationID}</simple>
+      </setHeader>
+      <toD uri="file:{{inputPath}}?fileExist=Append"/>
+    </route>
+
+  </camelContext>
+
+</beans>
