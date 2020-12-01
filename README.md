@@ -28,7 +28,7 @@ Modify file UploadOFSFile-1.0-SNAPSHOT.jar>jndi.properties
 java.naming.factory.initial=org.jboss.naming.remote.client.InitialContextFactory
 java.naming.provider.url=http-remoting://localhost:8080
 java.naming.security.principal=BNKUSER01
-java.naming.security.credentials=Temenos1
+java.naming.security.credentials=XXXXXX
 
 # JNDI component
 jmsConnectionFactory=jms/RemoteConnectionFactory
